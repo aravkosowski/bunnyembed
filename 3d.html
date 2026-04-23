@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>3D Mobile Controls Demo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: #000;
+    touch-action: none; /* prevent scroll on swipe */
+    font-family: sans-serif;
+  }
+
+  #info {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    color: white;
+    z-index: 10;
+    font-size: 14px;
+    text-shadow: 0 0 4px black;
+  }
+
+  /* Virtual joystick */
+  #joystick-container {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    width: 140px;
+    height: 140px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.4);
+    background: rgba(255,255,255,0.05);
+    touch-action: none;
+  }
+
+  #joystick-thumb {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 60px;
+    height: 60px;
+    margin-left: -30px;
+    margin-top: -30px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.7);
+    touch-action: none;
+  }
+</style>
+</head>
+<body>
+<div id="info">Drag left circle to move • Drag on screen to look</div>
+<div id="joystick-container">
+  <div id="joystick-thumb"></div>
+</div>
+
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+
+<script>
+  // ----- THREE.JS SETUP -----
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x202030);
+
+  const camera = new THREE.PerspectiveCamera(
+    75,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    1000
+  );
+  camera.position.set(0, 2, 5);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  // Lights
+  const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
+  hemiLight.position.set(0, 20, 0);
+  scene.add(hemiLight);
+
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  dirLight.position.set(5, 10, 2);
+  scene.add(dirLight);
+
+  // Ground
+  const groundGeo = new THREE.PlaneGeometry(200, 200);
+  const groundMat = new THREE.MeshStandardMaterial({ color: 0x303030 });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  scene.add(ground);
+
+  // Player (simple box)
+  const playerGeo = new THREE.BoxGeometry(1, 2, 1);
+  const playerMat = new THREE.MeshStandardMaterial({ color: 0x00ff88 });
+  const player = new THREE.Mesh(playerGeo, playerMat);
+  player.position.set(0, 1, 0);
+  scene.add(player);
+
+  // Some cubes to walk around
+  const boxGeo = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+  const boxMat = new THREE.MeshStandardMaterial({ color: 0xff5555 });
+  for (let i = 0; i < 20; i++) {
+    const box = new THREE.Mesh(boxGeo, boxMat);
+    box.position.set(
+      (Math.random() - 0.5) * 60,
+      0.75,
+      (Math.random() - 0.5) * 60
+    );
+    scene.add(box);
+  }
+
+  // ----- MOVEMENT STATE -----
+  let moveX = 0; // -1 to 1
+  let moveY = 0; // -1 to 1
+  const moveSpeed = 10;
+
+  let yaw = 0;
+  let pitch = 0;
+  const lookSpeed = 0.003;
+
+  // ----- JOYSTICK -----
+  const joyContainer = document.getElementById("joystick-container");
+  const joyThumb = document.getElementById("joystick-thumb");
+  const joyRect = () => joyContainer.getBoundingClientRect();
+
+  let joyActive = false;
+  let joyCenter = { x: 0, y: 0 };
+
+  function handleJoyStart(e) {
+    e.preventDefault();
+    joyActive = true;
+    const touch = e.touches ? e.touches[0] : e;
+    const rect = joyRect();
+    joyCenter.x = rect.left + rect.width / 2;
+    joyCenter.y = rect.top + rect.height / 2;
+    updateJoystick(touch.clientX, touch.clientY);
+  }
+
+  function handleJoyMove(e) {
+    if (!joyActive) return;
+    e.preventDefault();
+    const touch = e.touches ? e.touches[0] : e;
+    updateJoystick(touch.clientX, touch.clientY);
+  }
+
+  function handleJoyEnd(e) {
+    e.preventDefault();
+    joyActive = false;
+    moveX = 0;
+    moveY = 0;
+    joyThumb.style.left = "50%";
+    joyThumb.style.top = "50%";
+  }
+
+  function updateJoystick(x, y) {
+    const rect = joyRect();
+    const radius = rect.width / 2;
+    const dx = x - joyCenter.x;
+    const dy = y - joyCenter.y;
+    const dist = Math.min(Math.sqrt(dx * dx + dy * dy), radius);
+
+    const angle = Math.atan2(dy, dx);
+    const nx = Math.cos(angle) * dist;
+    const ny = Math.sin(angle) * dist;
+
+    joyThumb.style.left = radius + nx - joyThumb.offsetWidth / 2 + "px";
+    joyThumb.style.top = radius + ny - joyThumb.offsetHeight / 2 + "px";
+
+    // Normalize to -1..1 (x = left/right, y = forward/back)
+    moveX = nx / radius;
+    moveY = -ny / radius; // invert so up is forward
+  }
+
+  joyContainer.addEventListener("touchstart", handleJoyStart, { passive: false });
+  joyContainer.addEventListener("touchmove", handleJoyMove, { passive: false });
+  joyContainer.addEventListener("touchend", handleJoyEnd, { passive: false });
+  joyContainer.addEventListener("mousedown", handleJoyStart);
+  window.addEventListener("mousemove", handleJoyMove);
+  window.addEventListener("mouseup", handleJoyEnd);
+
+  // ----- LOOK CONTROLS (DRAG ANYWHERE) -----
+  let lookActive = false;
+  let lastX = 0;
+  let lastY = 0;
+
+  function lookStart(e) {
+    // Ignore if starting inside joystick area
+    const rect = joyRect();
+    const touch = e.touches ? e.touches[0] : e;
+    if (
+      touch.clientX >= rect.left &&
+      touch.clientX <= rect.right &&
+      touch.clientY >= rect.top &&
+      touch.clientY <= rect.bottom
+    ) {
+      return;
+    }
+
+    e.preventDefault();
+    lookActive = true;
+    lastX = touch.clientX;
+    lastY = touch.clientY;
+  }
+
+  function lookMove(e) {
+    if (!lookActive) return;
+    e.preventDefault();
+    const touch = e.touches ? e.touches[0] : e;
+    const dx = touch.clientX - lastX;
+    const dy = touch.clientY - lastY;
+    lastX = touch.clientX;
+    lastY = touch.clientY;
+
+    yaw -= dx * lookSpeed;
+    pitch -= dy * lookSpeed;
+    const limit = Math.PI / 2 - 0.1;
+    pitch = Math.max(-limit, Math.min(limit, pitch));
+  }
+
+  function lookEnd(e) {
+    lookActive = false;
+  }
+
+  window.addEventListener("mousedown", lookStart);
+  window.addEventListener("mousemove", lookMove);
+  window.addEventListener("mouseup", lookEnd);
+
+  window.addEventListener("touchstart", lookStart, { passive: false });
+  window.addEventListener("touchmove", lookMove, { passive: false });
+  window.addEventListener("touchend", lookEnd, { passive: false });
+
+  // ----- RESIZE -----
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  // ----- ANIMATION LOOP -----
+  let lastTime = performance.now();
+
+  function animate(now) {
+    requestAnimationFrame(animate);
+    const dt = (now - lastTime) / 1000;
+    lastTime = now;
+
+    // Update player rotation from yaw
+    player.rotation.y = yaw;
+
+    // Movement in local space
+    const forward = new THREE.Vector3(
+      Math.sin(yaw),
+      0,
+      Math.cos(yaw)
+    ).normalize();
+    const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0,1,0)).negate();
+
+    const moveDir = new THREE.Vector3();
+    moveDir.addScaledVector(forward, moveY);
+    moveDir.addScaledVector(right, moveX);
+
+    if (moveDir.lengthSq() > 0) {
+      moveDir.normalize();
+      player.position.addScaledVector(moveDir, moveSpeed * dt);
+    }
+
+    // Camera follows player (third-person-ish)
+    const camOffset = new THREE.Vector3(0, 3, 6);
+    const rotY = new THREE.Matrix4().makeRotationY(yaw);
+    const rotatedOffset = camOffset.clone().applyMatrix4(rotY);
+
+    camera.position.copy(player.position).add(rotatedOffset);
+    camera.lookAt(
+      player.position.x,
+      player.position.y + 1.5 + Math.sin(pitch),
+      player.position.z
+    );
+
+    renderer.render(scene, camera);
+  }
+
+  animate(performance.now());
+</script>
+</body>
+</html>
